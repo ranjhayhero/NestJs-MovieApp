@@ -1,65 +1,44 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { RegisterDTO } from './dto/register.dto';
-import { User } from './user/user.schema';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import * as bcrypt from 'bcrypt';
-import { UserResponseDTO } from './dto/user-response.dto';
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  password: string;
+}
 
-@Injectable()
 export class AuthService {
-  constructor(
-    private readonly jwtService: JwtService,
-    @InjectModel(User.name) private userModel: Model<User>,
-  ) {}
-
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.userModel.findOne({ username }).lean(true);
-
-    if (user) {
-      const isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (isMatch) {
-        delete user.passwordHash;
-        return user;
-      }
-      return null;
+  /**
+   * Validates a user based on given criteria
+   * @param user User object to validate
+   * @returns true if user is valid, throws error otherwise
+   */
+  validateUser(user: User): boolean {
+    // Check if user object exists
+    if (!user) {
+      throw new Error('User cannot be null or undefined');
     }
-    return null;
-  }
 
-  async login(user: any) {
-    const payload = { userId: user._id, username: user.username };
-    return {
-      access_token: this.jwtService.sign(payload),
-    };
-  }
-  async register(registerDto: RegisterDTO): Promise<UserResponseDTO> {
-    const { username, email, password, firstName, lastName } = registerDto;
-
-    const existingUser = await this.userModel.findOne({
-      $or: [{ username }, { email }],
-    });
-    if (existingUser) {
-      throw new HttpException('User already exists', HttpStatus.UNAUTHORIZED);
+    // Validate username
+    if (!user.username || user.username.length < 3) {
+      throw new Error('Username must be at least 3 characters long');
     }
-    const salt = await bcrypt.genSalt();
 
-    const passwordHash = await bcrypt.hash(password, salt);
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!user.email || !emailRegex.test(user.email)) {
+      throw new Error('Invalid email address');
+    }
 
-    const newUser = new this.userModel({
-      firstName,
-      lastName,
-      username,
-      email,
-      passwordHash: passwordHash,
-    });
-    const user = await newUser.save();
-    return {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      username: user.username,
-    };
+    // Validate password
+    if (!user.password || user.password.length < 8) {
+      throw new Error('Password must be at least 8 characters long');
+    }
+
+    // Additional password complexity check
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+    if (!passwordRegex.test(user.password)) {
+      throw new Error('Password must contain at least one letter and one number');
+    }
+
+    return true;
   }
 }
