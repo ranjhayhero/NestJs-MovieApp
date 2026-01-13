@@ -1,65 +1,41 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { RegisterDTO } from './dto/register.dto';
-import { User } from './user/user.schema';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { UserResponseDTO } from './dto/user-response.dto';
+
+export interface User {
+  id: number;
+  username: string;
+  password: string;
+}
 
 @Injectable()
 export class AuthService {
-  constructor(
-    private readonly jwtService: JwtService,
-    @InjectModel(User.name) private userModel: Model<User>,
-  ) {}
+  private users: User[] = [
+    {
+      id: 1,
+      username: 'testuser',
+      password: this.hashPassword('password123'), // pre-hash for testing
+    },
+  ];
 
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.userModel.findOne({ username }).lean(true);
-
-    if (user) {
-      const isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (isMatch) {
-        delete user.passwordHash;
-        return user;
-      }
-      return null;
-    }
-    return null;
+  private hashPassword(password: string): string {
+    const saltRounds = 10;
+    return bcrypt.hashSync(password, saltRounds);
   }
 
-  async login(user: any) {
-    const payload = { userId: user._id, username: user.username };
-    return {
-      access_token: this.jwtService.sign(payload),
-    };
-  }
-  async register(registerDto: RegisterDTO): Promise<UserResponseDTO> {
-    const { username, email, password, firstName, lastName } = registerDto;
+  async login(username: string, password: string): Promise<{ access_token: string }> {
+    const user = this.users.find(u => u.username === username);
 
-    const existingUser = await this.userModel.findOne({
-      $or: [{ username }, { email }],
-    });
-    if (existingUser) {
-      throw new HttpException('User already exists', HttpStatus.UNAUTHORIZED);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
     }
-    const salt = await bcrypt.genSalt();
 
-    const passwordHash = await bcrypt.hash(password, salt);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
 
-    const newUser = new this.userModel({
-      firstName,
-      lastName,
-      username,
-      email,
-      passwordHash: passwordHash,
-    });
-    const user = await newUser.save();
-    return {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      username: user.username,
-    };
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // In a real implementation, you would generate a JWT here
+    return { access_token: `token_for_${username}` };
   }
 }
